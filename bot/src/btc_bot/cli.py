@@ -11,7 +11,7 @@ from btc_bot.backtest.walk_forward import run_oos
 from btc_bot.config import DEFAULT_CONFIG
 from btc_bot.data.fetcher import fetch_ohlcv, load_ohlcv, save_ohlcv
 from btc_bot.monitor.regime import detect_regime, run_regime_watch
-from btc_bot.notify import make_notifier
+from btc_bot.notify import NullNotifier, make_notifier
 from btc_bot.paper.engine import run_paper_loop
 from btc_bot.strategies.mean_reversion import MeanReversion
 from btc_bot.strategies.sma_cross import SmaCross
@@ -136,6 +136,18 @@ def oos(min_w: int = 3, max_w: int = 15, timeframe: str = "1d", trend_filter: in
         f"[bold]{report.best_window_test_return_pct}%[/] "
         f"(test 벤치마크 {report.test_bench_pct}%)"
     )
+
+
+@app.command("send-test")
+def send_test(message: str = "btc-bot 알림 테스트 ✅ 이 메시지가 보이면 연결 성공") -> None:
+    """디스코드 웹훅이 제대로 연결됐는지 테스트 메시지를 한 번 보낸다."""
+    notifier = make_notifier()
+    if isinstance(notifier, NullNotifier):
+        console.print("[yellow]웹훅 미설정[/] — bot/.env 에 BTC_BOT_DISCORD_WEBHOOK 값을 넣으세요.")
+        raise typer.Exit(1)
+    notifier.send(message)
+    console.print("[green]전송 시도 완료[/] — 디스코드 채널을 확인하세요.")
+    console.print("안 왔다면 위에 [알림 전송 실패] 경고가 있는지 보고, 웹훅 URL을 다시 확인하세요.")
 
 
 @app.command()
