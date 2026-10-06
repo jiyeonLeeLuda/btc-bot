@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
@@ -9,9 +10,13 @@ from btc_bot.backtest.event_engine import run_event_backtest
 from btc_bot.backtest.walk_forward import run_oos
 from btc_bot.config import DEFAULT_CONFIG
 from btc_bot.data.fetcher import fetch_ohlcv, load_ohlcv, save_ohlcv
+from btc_bot.monitor.regime import detect_regime, run_regime_watch
+from btc_bot.notify import make_notifier
 from btc_bot.paper.engine import run_paper_loop
 from btc_bot.strategies.mean_reversion import MeanReversion
 from btc_bot.strategies.sma_cross import SmaCross
+
+load_dotenv()
 
 app = typer.Typer(help="BTC 학습용 페이퍼 트레이딩 봇")
 console = Console()
@@ -130,6 +135,35 @@ def oos(min_w: int = 3, max_w: int = 15, timeframe: str = "1d", trend_filter: in
         f"({report.best_train_return_pct}%) → 같은 기준으로 test에선 "
         f"[bold]{report.best_window_test_return_pct}%[/] "
         f"(test 벤치마크 {report.test_bench_pct}%)"
+    )
+
+
+@app.command()
+def regime(window: int = 200, timeframe: str = "1d") -> None:
+    """지금 비트코인이 장기선 위(상승장)인지 아래(하락장)인지 즉시 확인."""
+    candles = fetch_ohlcv(DEFAULT_CONFIG.symbol, timeframe, limit=window + 50)
+    status = detect_regime(candles, window)
+    label = "📉 하락장 (장기선 아래)" if status.regime == "down" else "📈 상승장 (장기선 위)"
+    table = Table(title=f"현재 장세 ({window}일선 기준)")
+    table.add_column("지표")
+    table.add_column("값", justify="right")
+    table.add_row("판정", label)
+    table.add_row("현재가", f"${status.price:,.0f}")
+    table.add_row(f"{window}일 평균선", f"${status.long_ma:,.0f}")
+    table.add_row("장기선 대비", f"{status.gap_pct:+.2f}%")
+    console.print(table)
+    if status.regime == "down":
+        console.print("[yellow]평균회귀 전략은 이런 장에서 손실이 나요 — 매수 쉬는 걸 권장.[/]")
+
+
+@app.command("watch-regime")
+def watch_regime(window: int = 200, poll_seconds: int = 3600) -> None:
+    """장세를 계속 감시하다 상승↔하락이 바뀌면 디스코드로 알림 (Ctrl+C로 종료)."""
+    run_regime_watch(
+        DEFAULT_CONFIG.symbol, window,
+        state_path=DATA_DIR / "regime-state.json",
+        notifier=make_notifier(),
+        poll_seconds=poll_seconds,
     )
 
 
