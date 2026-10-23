@@ -10,6 +10,8 @@ from btc_bot.backtest.event_engine import run_event_backtest
 from btc_bot.backtest.walk_forward import run_oos
 from btc_bot.config import DEFAULT_CONFIG
 from btc_bot.data.fetcher import fetch_ohlcv, load_ohlcv, save_ohlcv
+from btc_bot.monitor.exit_watch import run_exit_watch
+from btc_bot.monitor.price_watch import run_price_watch
 from btc_bot.monitor.regime import detect_regime, run_regime_watch
 from btc_bot.notify import NullNotifier, make_notifier
 from btc_bot.paper.engine import run_paper_loop
@@ -176,6 +178,49 @@ def watch_regime(window: int = 200, poll_seconds: int = 3600) -> None:
         state_path=DATA_DIR / "regime-state.json",
         notifier=make_notifier(),
         poll_seconds=poll_seconds,
+    )
+
+
+@app.command("watch-price")
+def watch_price(
+    target: float = typer.Argument(..., help="알림받을 목표가 (USDT)"),
+    poll_seconds: int = 60,
+    near_pct: float = 1.0,
+) -> None:
+    """목표가 도달 시 디스코드 알림. 접근(기본 1% 이내) 시 1차 알림, 도달 시 알리고 종료.
+
+    예: uv run btc-bot watch-price 79899.8
+    """
+    notifier = make_notifier()
+    if isinstance(notifier, NullNotifier):
+        console.print("[yellow]웹훅 미설정[/] — 디스코드 알림 없이 콘솔에만 표시합니다.")
+    run_price_watch(
+        DEFAULT_CONFIG.symbol, target,
+        notifier=notifier, poll_seconds=poll_seconds, near_pct=near_pct,
+    )
+
+
+@app.command("watch-exit")
+def watch_exit(
+    entry: float = typer.Argument(..., help="실제 매수(체결)가 (USDT)"),
+    stop: float = 0.04,
+    arm: float = 0.06,
+    trail: float = 0.04,
+    poll_seconds: int = 60,
+) -> None:
+    """매수 후 '팔 때'를 알려주는 매도 감시. 손절/트레일링 익절 신호 시 디스코드 알림.
+
+    전략 규칙 그대로: 매수가 -4% 손절, +6% 도달 후 고점 대비 -4% 익절.
+    예: uv run btc-bot watch-exit 79899.8
+    """
+    notifier = make_notifier()
+    if isinstance(notifier, NullNotifier):
+        console.print("[yellow]웹훅 미설정[/] — 디스코드 알림 없이 콘솔에만 표시합니다.")
+    run_exit_watch(
+        DEFAULT_CONFIG.symbol, entry,
+        state_path=DATA_DIR / "exit-watch-state.json",
+        notifier=notifier, poll_seconds=poll_seconds,
+        stop_loss_pct=stop, arm_profit_pct=arm, trail_pct=trail,
     )
 
 
